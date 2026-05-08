@@ -1,0 +1,263 @@
+;;; core.coal — Coalton type definitions for portfolio content model
+;;;
+;;; Every entity in the portfolio has a precise Coalton type.
+;;; Empty strings are impossible — the type system rejects them at compile time
+;;; via validation functions. Required fields are mandatory in type constructors.
+
+(package common-lisp-portfolio-forever/types/core
+  "Core type definitions for the portfolio content model."
+  (import
+    coalton-prelude)
+  (export
+    Tag Tagline Person Link Project Content Section Skill Talk Portfolio
+    tag-text tagline-lang tagline-text
+    project-slug project-title project-summary project-tags project-links
+    project-category project-year project-month project-wip
+    section-heading section-body section-keywords
+    skill-name skill-category skill-tags
+    person-name person-short-bio person-long-bio person-location
+    person-available person-email person-taglines
+    portfolio-person portfolio-projects portfolio-skills
+    portfolio-sections portfolio-talks
+    talk-title talk-type talk-date talk-description talk-link))
+
+;;; ============================================================
+;;; Primitive types
+;;; ============================================================
+
+(define-type Tag
+  "A non-empty keyword/tag for projects, skills, and sections."
+  (Tag String))
+
+(declare tag-text (Tag -> String))
+(define (tag-text (Tag s))
+  s)
+
+(define-type Tagline
+  "A multilingual tagline with language code and text."
+  (Tagline String String))
+
+(declare tagline-lang (Tagline -> String))
+(define (tagline-lang (Tagline lang _))
+  lang)
+
+(declare tagline-text (Tagline -> String))
+(define (tagline-text (Tagline _ text))
+  text)
+
+(define-type Link
+  "A labeled hyperlink."
+  (Link String String))
+
+;;; ============================================================
+;;; Person (profile)
+;;; ============================================================
+
+(define-type Person
+  "Portfolio owner profile."
+  (Person String             ;; name
+          String             ;; short-bio
+          (Optional String)  ;; long-bio (optional)
+          String             ;; location
+          Boolean            ;; available
+          String             ;; email
+          (List Tagline)))   ;; taglines (at least 1)
+
+(declare person-name (Person -> String))
+(define (person-name (Person name _ _ _ _ _ _))
+  name)
+
+(declare person-short-bio (Person -> String))
+(define (person-short-bio (Person _ short _ _ _ _ _))
+  short)
+
+(declare person-long-bio (Person -> (Optional String)))
+(define (person-long-bio (Person _ _ long _ _ _ _))
+  long)
+
+(declare person-location (Person -> String))
+(define (person-location (Person _ _ _ loc _ _ _))
+  loc)
+
+(declare person-available (Person -> Boolean))
+(define (person-available (Person _ _ _ _ avail _ _))
+  avail)
+
+(declare person-email (Person -> String))
+(define (person-email (Person _ _ _ _ _ email _))
+  email)
+
+(declare person-taglines (Person -> (List Tagline)))
+(define (person-taglines (Person _ _ _ _ _ _ tls))
+  tls)
+
+;;; ============================================================
+;;; Project (work)
+;;; ============================================================
+
+(define-type Project
+  "A portfolio project/work entry."
+  (Project String            ;; slug (url-safe identifier)
+           String            ;; title
+           String            ;; summary (required)
+           (List Tag)        ;; tags
+           (List Link)       ;; links
+           String            ;; category
+           Integer           ;; year
+           Integer           ;; month
+           (Optional String) ;; featured-color
+           Boolean))         ;; wip?
+
+(declare project-slug (Project -> String))
+(define (project-slug (Project slug _ _ _ _ _ _ _ _ _))
+  slug)
+
+(declare project-title (Project -> String))
+(define (project-title (Project _ title _ _ _ _ _ _ _ _))
+  title)
+
+(declare project-summary (Project -> String))
+(define (project-summary (Project _ _ summary _ _ _ _ _ _ _))
+  summary)
+
+(declare project-tags (Project -> (List Tag)))
+(define (project-tags (Project _ _ _ tags _ _ _ _ _ _))
+  tags)
+
+(declare project-links (Project -> (List Link)))
+(define (project-links (Project _ _ _ _ links _ _ _ _ _))
+  links)
+
+(declare project-category (Project -> String))
+(define (project-category (Project _ _ _ _ _ cat _ _ _ _))
+  cat)
+
+(declare project-year (Project -> Integer))
+(define (project-year (Project _ _ _ _ _ _ year _ _ _))
+  year)
+
+(declare project-month (Project -> Integer))
+(define (project-month (Project _ _ _ _ _ _ _ month _ _))
+  month)
+
+(declare project-wip (Project -> Boolean))
+(define (project-wip (Project _ _ _ _ _ _ _ _ _ wip))
+  wip)
+
+;;; ============================================================
+;;; Content blocks (for page sections)
+;;; ============================================================
+
+(define-type Content
+  "A block of page content."
+  (Paragraph String)
+  (BulletList (List String))
+  (CodeBlock String String))
+
+;;; ============================================================
+;;; Section (page section)
+;;; ============================================================
+
+(define-type Section
+  "A page section with heading, body content, and keywords."
+  (Section String        ;; heading
+           (List Content) ;; body
+           (List Tag)))   ;; keywords
+
+(declare section-heading (Section -> String))
+(define (section-heading (Section h _ _))
+  h)
+
+(declare section-body (Section -> (List Content)))
+(define (section-body (Section _ b _))
+  b)
+
+(declare section-keywords (Section -> (List Tag)))
+(define (section-keywords (Section _ _ k))
+  k)
+
+;;; ============================================================
+;;; Skill
+;;; ============================================================
+
+(define-type Skill
+  "A technical skill with category and tags."
+  (Skill String        ;; name
+         String        ;; category
+         (List Tag)))   ;; tags
+
+(declare skill-name (Skill -> String))
+(define (skill-name (Skill n _ _))
+  n)
+
+(declare skill-category (Skill -> String))
+(define (skill-category (Skill _ cat _))
+  cat)
+
+(declare skill-tags (Skill -> (List Tag)))
+(define (skill-tags (Skill _ _ tags))
+  tags)
+
+;;; ============================================================
+;;; Talk / Interview
+;;; ============================================================
+
+(define-type Talk
+  "A talk or interview entry."
+  (Talk String            ;; title
+        String            ;; type ("talk" or "interview")
+        String            ;; date
+        String            ;; description
+        (Optional String))) ;; link
+
+(declare talk-title (Talk -> String))
+(define (talk-title (Talk t _ _ _ _))
+  t)
+
+(declare talk-type (Talk -> String))
+(define (talk-type (Talk _ ty _ _ _))
+  ty)
+
+(declare talk-date (Talk -> String))
+(define (talk-date (Talk _ _ d _ _))
+  d)
+
+(declare talk-description (Talk -> String))
+(define (talk-description (Talk _ _ _ desc _))
+  desc)
+
+(declare talk-link (Talk -> (Optional String)))
+(define (talk-link (Talk _ _ _ _ link))
+  link)
+
+;;; ============================================================
+;;; Portfolio (top-level)
+;;; ============================================================
+
+(define-type Portfolio
+  "The complete portfolio — all content in one typed structure."
+  (Portfolio Person
+            (List Project)
+            (List Skill)
+            (List Section)
+            (List Talk)))
+
+(declare portfolio-person (Portfolio -> Person))
+(define (portfolio-person (Portfolio p _ _ _ _))
+  p)
+
+(declare portfolio-projects (Portfolio -> (List Project)))
+(define (portfolio-projects (Portfolio _ projs _ _ _))
+  projs)
+
+(declare portfolio-skills (Portfolio -> (List Skill)))
+(define (portfolio-skills (Portfolio _ _ skills _ _))
+  skills)
+
+(declare portfolio-sections (Portfolio -> (List Section)))
+(define (portfolio-sections (Portfolio _ _ _ secs _))
+  secs)
+
+(declare portfolio-talks (Portfolio -> (List Talk)))
+(define (portfolio-talks (Portfolio _ _ _ _ talks))
+  talks)

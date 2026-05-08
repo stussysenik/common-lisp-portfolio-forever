@@ -1,0 +1,201 @@
+;;; validation.coal — Type-safe validation functions for portfolio entities
+;;;
+;;; Every validate-* function returns (List String) — empty list means valid.
+;;; Non-empty list contains human-readable error messages.
+
+(package common-lisp-portfolio-forever/types/validation
+  "Type-safe validation for portfolio content entities."
+  (import
+    coalton-prelude
+    common-lisp-portfolio-forever/types/core)
+  (export
+    non-empty?
+    validate-tag
+    validate-tagline
+    validate-person
+    validate-project
+    validate-section
+    validate-skill
+    validate-talk
+    validate-portfolio
+    is-portfolio-valid?))
+
+;;; ============================================================
+;;; Utilities
+;;; ============================================================
+
+(declare non-empty? (String -> Boolean))
+(define (non-empty? s)
+  "True if the string is not empty."
+  (not (== s "")))
+
+(declare my-append ((List String) -> (List String) -> (List String)))
+(define (my-append xs ys)
+  "Append two lists of strings."
+  (match xs
+    ((Nil) ys)
+    ((Cons x rest) (Cons x (my-append rest ys)))))
+
+(declare my-foldr ((:a -> (List String) -> (List String)) -> (List String) -> (List :a) -> (List String)))
+(define (my-foldr f init xs)
+  "Right fold over a list, accumulating a (List String)."
+  (match xs
+    ((Nil) init)
+    ((Cons x rest) (f x (my-foldr f init rest)))))
+
+(declare my-null? ((List :a) -> Boolean))
+(define (my-null? xs)
+  "True if the list is empty."
+  (match xs
+    ((Nil) True)
+    (_ False)))
+
+;;; ============================================================
+;;; Tag validation
+;;; ============================================================
+
+(declare validate-tag (Tag -> (List String)))
+(define (validate-tag (Tag text))
+  "A valid tag has non-empty text."
+  (if (non-empty? text)
+      Nil
+      (make-list "Tag text must not be empty")))
+
+;;; ============================================================
+;;; Tagline validation
+;;; ============================================================
+
+(declare validate-tagline (Tagline -> (List String)))
+(define (validate-tagline (Tagline lang text))
+  "A valid tagline has non-empty lang and text."
+  (let ((e0 Nil))
+    (let ((e1 (if (non-empty? lang) e0
+                  (Cons "Tagline language code must not be empty" e0))))
+      (let ((e2 (if (non-empty? text) e1
+                    (Cons "Tagline text must not be empty" e1))))
+        e2))))
+
+;;; ============================================================
+;;; Person validation
+;;; ============================================================
+
+(declare validate-person (Person -> (List String)))
+(define (validate-person (Person name short long location available email taglines))
+  "Validate a Person profile. All core fields must be non-empty.
+   At least one tagline is required."
+  (let ((e0 Nil))
+    (let ((e1 (if (non-empty? name) e0
+                  (Cons "Name must not be empty" e0))))
+      (let ((e2 (if (non-empty? short) e1
+                    (Cons "Short bio must not be empty" e1))))
+        (let ((e3 (if (non-empty? location) e2
+                      (Cons "Location must not be empty" e2))))
+          (let ((e4 (if (non-empty? email) e3
+                        (Cons "Email must not be empty" e3))))
+            (let ((e5 (match taglines
+                        ((Nil) (Cons "At least one tagline is required" e4))
+                        (_ e4))))
+              (my-foldr (fn (tl acc)
+                          (my-append (validate-tagline tl) acc))
+                        e5
+                        taglines))))))))
+
+;;; ============================================================
+;;; Project validation
+;;; ============================================================
+
+(declare validate-project (Project -> (List String)))
+(define (validate-project (Project slug title summary tags _links category year month _color _wip))
+  "Validate a project. Slug, title, summary, category must be non-empty.
+   At least one tag. Year and month must be reasonable."
+  (let ((e0 Nil))
+    (let ((e1 (if (non-empty? slug) e0
+                  (Cons "Project slug must not be empty" e0))))
+      (let ((e2 (if (non-empty? title) e1
+                    (Cons "Project title must not be empty" e1))))
+        (let ((e3 (if (non-empty? summary) e2
+                      (Cons "Project summary must not be empty" e2))))
+          (let ((e4 (if (non-empty? category) e3
+                        (Cons "Project category must not be empty" e3))))
+            (let ((e5 (match tags
+                        ((Nil) (Cons "Project must have at least one tag" e4))
+                        (_ e4))))
+              (let ((e6 (if (>= year 2015) e5
+                            (Cons "Project year must be >= 2015" e5))))
+                (let ((e7 (if (<= year 2050) e6
+                              (Cons "Project year must be <= 2050" e6))))
+                  (let ((e8 (if (and (>= month 1) (<= month 12)) e7
+                                (Cons "Project month must be 1-12" e7))))
+                    (my-foldr (fn (tag acc)
+                                (my-append (validate-tag tag) acc))
+                              e8
+                              tags)))))))))))
+
+;;; ============================================================
+;;; Section validation
+;;; ============================================================
+
+(declare validate-section (Section -> (List String)))
+(define (validate-section (Section heading _body _keywords))
+  "A valid section has a non-empty heading."
+  (if (non-empty? heading)
+      Nil
+      (make-list "Section heading must not be empty")))
+
+;;; ============================================================
+;;; Skill validation
+;;; ============================================================
+
+(declare validate-skill (Skill -> (List String)))
+(define (validate-skill (Skill name category _tags))
+  "A valid skill has non-empty name and category."
+  (let ((e0 Nil))
+    (let ((e1 (if (non-empty? name) e0
+                  (Cons "Skill name must not be empty" e0))))
+      (let ((e2 (if (non-empty? category) e1
+                    (Cons "Skill category must not be empty" e1))))
+        e2))))
+
+;;; ============================================================
+;;; Talk validation
+;;; ============================================================
+
+(declare validate-talk (Talk -> (List String)))
+(define (validate-talk (Talk title _type date description _link))
+  "A valid talk has non-empty title, date, and description."
+  (let ((e0 Nil))
+    (let ((e1 (if (non-empty? title) e0
+                  (Cons "Talk title must not be empty" e0))))
+      (let ((e2 (if (non-empty? date) e1
+                    (Cons "Talk date must not be empty" e1))))
+        (let ((e3 (if (non-empty? description) e2
+                      (Cons "Talk description must not be empty" e2))))
+          e3)))))
+
+;;; ============================================================
+;;; Portfolio validation (top-level)
+;;; ============================================================
+
+(declare validate-portfolio (Portfolio -> (List String)))
+(define (validate-portfolio (Portfolio person projects skills sections talks))
+  "Validate the entire portfolio. Checks all sub-entities."
+  (let ((e0 Nil))
+    (let ((e1 (my-append (validate-person person) e0)))
+      (let ((e2 (my-foldr (fn (proj acc)
+                            (my-append (validate-project proj) acc))
+                          e1 projects)))
+        (let ((e3 (my-foldr (fn (skill acc)
+                              (my-append (validate-skill skill) acc))
+                            e2 skills)))
+          (let ((e4 (my-foldr (fn (sec acc)
+                                (my-append (validate-section sec) acc))
+                              e3 sections)))
+            (let ((e5 (my-foldr (fn (talk acc)
+                                    (my-append (validate-talk talk) acc))
+                                e4 talks)))
+              e5)))))))
+
+(declare is-portfolio-valid? (Portfolio -> Boolean))
+(define (is-portfolio-valid? p)
+  "True if the portfolio has no validation errors."
+  (my-null? (validate-portfolio p)))
