@@ -2,12 +2,12 @@
 
 (defpackage #:common-lisp-portfolio-forever/tests
   (:use #:cl)
-  (:import-from #:coalton #:coalton-toplevel)
-  (:import-from #:coalton-testing #:define-test #:is #:coalton-fiasco-init)
-  (:import-from #:coalton-library/list #:make-list)
+  (:export #:run-tests)
+  (:import-from #:coalton-testing #:is #:coalton-fiasco-init)
   (:local-nicknames (#:core #:common-lisp-portfolio-forever/types/core)
                     (#:valid #:common-lisp-portfolio-forever/types/validation)
-                    (#:list #:coalton-library/list)))
+                    (#:list #:coalton-library/list)
+                    (#:builtin #:coalton-library/builtin)))
 
 (in-package #:common-lisp-portfolio-forever/tests)
 
@@ -27,64 +27,62 @@
 ;;; Test: Tag validation
 ;;; ============================================================
 
-(coalton-toplevel
-  (define-test test-valid-tag ()
-    (is (list:null? (valid:validate-tag (core:Tag "coalton")))))
+(define-test test-valid-tag ()
+  (is (list:null? (valid:validate-tag (core:Tag "coalton")))))
 
-  (define-test test-empty-tag ()
-    (is (not (list:null? (valid:validate-tag (core:Tag "")))))))
+(define-test test-empty-tag ()
+  (is (builtin:not (list:null? (valid:validate-tag (core:Tag ""))))))
 
 ;;; ============================================================
 ;;; Test: Person validation
 ;;; ============================================================
 
-(coalton-toplevel
-  (define-test test-valid-person ()
-    (let ((p (core:Person
-              "Senik"
-              "A programmer."
-              coalton:None
-              "NYC"
-              coalton:True
-              "email@example.com"
-              (make-list (core:Tagline "en" "Design Engineer")))))
-      (is (list:null? (valid:validate-person p)))))
+(define-test test-valid-person ()
+  (is (list:null?
+       (valid:validate-person
+        (core:Person "Senik" "A programmer." coalton:None "NYC" coalton:True
+                     "email@example.com"
+                     (coalton:make-list (core:Tagline "en" "Design Engineer")))))))
 
-  (define-test test-person-missing-name ()
-    (let ((p (core:Person "" "bio" coalton:None "NYC" coalton:True "e@e.com"
-                          (make-list (core:Tagline "en" "tag")))))
-      (is (not (list:null? (valid:validate-person p))))))
+(define-test test-person-missing-name ()
+  (is (builtin:not (list:null?
+            (valid:validate-person
+             (core:Person "" "bio" coalton:None "NYC" coalton:True "e@e.com"
+                          (coalton:make-list (core:Tagline "en" "tag"))))))))
 
-  (define-test test-person-no-taglines ()
-    (let ((p (core:Person "Senik" "bio" coalton:None "NYC" coalton:True "e@e.com"
-                          coalton:Nil)))
-      (is (not (list:null? (valid:validate-person p)))))))
+(define-test test-person-no-taglines ()
+  (is (builtin:not (list:null?
+            (valid:validate-person
+             (core:Person "Senik" "bio" coalton:None "NYC" coalton:True "e@e.com"
+                          coalton:Nil))))))
 
 ;;; ============================================================
 ;;; Test: Project validation
 ;;; ============================================================
 
-(coalton-toplevel
-  (define-test test-valid-project ()
-    (let ((p (core:Project
-              "foo-compiler" "Foo Compiler" "A compiler."
-              (make-list (core:Tag "compilers") (core:Tag "coalton"))
-              coalton:Nil
-              "compilers" 2026 4 coalton:None coalton:False)))
-      (is (list:null? (valid:validate-project p)))))
+(define-test test-valid-project ()
+  (is (list:null?
+       (valid:validate-project
+        (core:Project "foo-compiler" "Foo Compiler" "A compiler."
+                      (coalton:make-list (core:Tag "compilers") (core:Tag "coalton"))
+                      coalton:Nil "compilers" 2026 4 coalton:None coalton:False)))))
 
-  (define-test test-project-empty-slug ()
-    (let ((p (core:Project "" "Foo" "summary"
-                           (make-list (core:Tag "x"))
-                           coalton:Nil "cat" 2026 1 coalton:None coalton:False)))
-      (is (not (list:null? (valid:validate-project p))))))
+(define-test test-project-empty-slug ()
+  (is (builtin:not (list:null?
+            (valid:validate-project
+             (core:Project "" "Foo" "summary"
+                           (coalton:make-list (core:Tag "x"))
+                           coalton:Nil "cat" 2026 1 coalton:None coalton:False))))))
 
-  (define-test test-project-no-tags ()
-    (let ((p (core:Project "slug" "Foo" "summary" coalton:Nil coalton:Nil "cat" 2026 1 coalton:None coalton:False)))
-      (is (not (list:null? (valid:validate-project p))))))
+(define-test test-project-no-tags ()
+  (is (builtin:not (list:null?
+            (valid:validate-project
+             (core:Project "slug" "Foo" "summary" coalton:Nil coalton:Nil
+                           "cat" 2026 1 coalton:None coalton:False))))))
 
-  (define-test test-project-bad-year ()
-    (let ((p (core:Project "slug" "Foo" "summary"
-                           (make-list (core:Tag "x"))
-                           coalton:Nil "cat" 2010 1 coalton:None coalton:False)))
-      (is (not (list:null? (valid:validate-project p)))))))
+(define-test test-project-bad-year ()
+  (is (builtin:not (list:null?
+            (valid:validate-project
+             (core:Project "slug" "Foo" "summary"
+                           (coalton:make-list (core:Tag "x"))
+                           coalton:Nil "cat" 2010 1 coalton:None coalton:False))))))

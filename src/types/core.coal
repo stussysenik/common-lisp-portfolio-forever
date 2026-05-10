@@ -19,7 +19,8 @@
     person-available person-email person-taglines
     portfolio-person portfolio-projects portfolio-skills
     portfolio-sections portfolio-talks
-    talk-title talk-type talk-date talk-description talk-link))
+    talk-title talk-type talk-date talk-description talk-link
+    link-label link-url project-featured-color))
 
 ;;; ============================================================
 ;;; Primitive types
@@ -48,6 +49,14 @@
 (define-type Link
   "A labeled hyperlink."
   (Link String String))
+
+(declare link-label (Link -> String))
+(define (link-label (Link label _))
+  label)
+
+(declare link-url (Link -> String))
+(define (link-url (Link _ url))
+  url)
 
 ;;; ============================================================
 ;;; Person (profile)
@@ -143,6 +152,10 @@
 (declare project-wip (Project -> Boolean))
 (define (project-wip (Project _ _ _ _ _ _ _ _ _ wip))
   wip)
+
+(declare project-featured-color (Project -> (Optional String)))
+(define (project-featured-color (Project _ _ _ _ _ _ _ _ color _))
+  color)
 
 ;;; ============================================================
 ;;; Content blocks (for page sections)

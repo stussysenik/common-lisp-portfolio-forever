@@ -19,6 +19,11 @@
    #:ask-person #:ask-project #:ask-section #:ask-skill #:ask-talk
    #:add-project #:add-skill
    #:make-tag #:make-tagline #:make-link
-   #:clist #:clist*))
+   #:clist #:clist*
+   #:export-all #:preview-profile #:preview-project #:preview-all
+   #:scaffold #:refine #:ship
+   #:bootstrap
+   #:seed-person #:seed-projects #:seed-skills #:seed-talks
+   #:*content-target*))
 
 

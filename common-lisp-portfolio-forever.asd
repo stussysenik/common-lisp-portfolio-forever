@@ -14,7 +14,9 @@
                (:coalton-file "types/core")
                (:coalton-file "types/validation")
                (:file "portfolio")
-               (:file "interrogate")))
+               (:file "interrogate")
+               (:file "import")
+               (:file "serialize")))
 
 (asdf:defsystem #:common-lisp-portfolio-forever/tests
   :description "Tests for common-lisp-portfolio-forever"

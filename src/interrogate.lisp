@@ -108,11 +108,7 @@
   "Extract value from a Coalton Optional, or NIL if None."
   (if (eq optional coalton:None)
       nil
-      (let ((fn (find-symbol "UNWRAP" "COALTON")))
-        (if fn
-            (funcall fn optional)
-            ;; Fallback: Coalton internal representation
-            optional))))
+      optional))
 
 ;;; ============================================================
 ;;; Prompt primitives
@@ -617,9 +613,214 @@
     (format *query-io* "~&  ✓ Skill added to *portfolio*.~%")))
 
 ;;; ============================================================
+;;; Mode 1: SCAFFOLD — capture initial content (rarely used)
+;;; ============================================================
+
+(defun scaffold (&optional target)
+  "Create fresh portfolio content from scratch.
+   Without arg: full portfolio builder (resets *portfolio*).
+   With keyword arg: scaffold a single entity type.
+   TARGET: :portfolio (default), :person, :project, :skill, :section, :talk."
+  (let ((target (or target :portfolio)))
+    (ecase target
+      (:portfolio
+       (setf *portfolio* nil)
+       (format *query-io* "~&  Scaffolding fresh portfolio...~%")
+       (describe-portfolio))
+      (:person
+       (let ((p (ask-person)))
+         (format *query-io* "~&~%  Person built. Store it in a portfolio with (describe-portfolio).~%")
+         p))
+      (:project
+       (let ((p (ask-project)))
+         (format *query-io* "~&~%  Project built. Add to *portfolio* with (refine).~%")
+         p))
+      (:skill
+       (let ((p (ask-skill)))
+         (format *query-io* "~&~%  Skill built. Add to *portfolio* with (refine).~%")
+         p))
+      (:section
+       (let ((p (ask-section)))
+         (format *query-io* "~&~%  Section built. Add to *portfolio* with (refine).~%")
+         p))
+      (:talk
+       (let ((p (ask-talk)))
+         (format *query-io* "~&~%  Talk built. Add to *portfolio* with (refine).~%")
+         p)))))
+
+;;; ============================================================
+;;; Mode 2: REFINE — maintain/mature/polish (daily driver)
+;;; ============================================================
+
+(defun refine (&optional entity)
+  "Maintain and polish existing portfolio content.
+   Without arg: interactive menu on *portfolio*.
+   With keyword arg: refine a specific entity type in-place.
+   ENTITY: NIL (menu), :person, :projects, :skills, :sections, :talks."
+  (unless *portfolio*
+    (format *query-io* "~&  No *portfolio* exists. Run (scaffold) first.~%")
+    (return-from refine nil))
+  (if entity
+      (refine-entity entity)
+      (refine-menu)))
+
+(defun refine-menu ()
+  "Interactive refinement menu for the current portfolio."
+  (loop
+    (format *query-io* "~&~%")
+    (format *query-io* "~&╔══════════════════════════════════════╗")
+    (format *query-io* "~&║        REFINE PORTFOLIO               ║")
+    (format *query-io* "~&╠══════════════════════════════════════╣")
+    (format *query-io* "~&║  [p]  Person (profile)               ║")
+    (format *query-io* "~&║  [w]  Works (projects) ~2D             ║"
+            (ct-list-length (ct-access *ct-core* "portfolio-projects" *portfolio*)))
+    (format *query-io* "~&║  [s]  Skills ~2D                       ║"
+            (ct-list-length (ct-access *ct-core* "portfolio-skills" *portfolio*)))
+    (format *query-io* "~&║  [c]  Sections ~2D                     ║"
+            (ct-list-length (ct-access *ct-core* "portfolio-sections" *portfolio*)))
+    (format *query-io* "~&║  [t]  Talks ~2D                        ║"
+            (ct-list-length (ct-access *ct-core* "portfolio-talks" *portfolio*)))
+    (format *query-io* "~&║  [v]  Validate all                    ║")
+    (format *query-io* "~&║  [st] Status / summary                ║")
+    (format *query-io* "~&║  [.]  Done (back)                     ║")
+    (format *query-io* "~&╚══════════════════════════════════════╝")
+    (prompt "~&> ")
+    (let ((choice (string-downcase (get-line))))
+      (cond
+        ((string= choice "p") (refine-entity :person))
+        ((string= choice "w") (refine-entity :projects))
+        ((string= choice "s") (refine-entity :skills))
+        ((string= choice "c") (refine-entity :sections))
+        ((string= choice "t") (refine-entity :talks))
+        ((string= choice "v") (show-full-validation))
+        ((string= choice "st") (show-status))
+        ((string= choice ".") (return-from refine-menu))
+        ((string= choice "") (return-from refine-menu))
+        (t (format *query-io* "~&  Unknown: ~A~%" choice))))))
+
+(defun refine-entity (entity)
+  "Refine a specific entity type in the portfolio."
+  (ecase entity
+    (:person
+     (let ((existing (ct-access *ct-core* "portfolio-person" *portfolio*))
+           (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
+           (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
+           (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
+           (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
+       (setf *portfolio* (make-portfolio (ask-person existing)
+                                          projects skills sections talks))
+       (format *query-io* "~&  ✓ Person updated.~%")))
+    (:projects
+     (let* ((existing (ct-access *ct-core* "portfolio-projects" *portfolio*))
+            (updated (ask-entity-list "PROJECT" #'ask-project existing))
+            (person (ct-access *ct-core* "portfolio-person" *portfolio*))
+            (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
+            (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
+            (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
+       (setf *portfolio* (make-portfolio person updated skills sections talks))))
+    (:skills
+     (let* ((existing (ct-access *ct-core* "portfolio-skills" *portfolio*))
+            (updated (ask-entity-list "SKILL" #'ask-skill existing))
+            (person (ct-access *ct-core* "portfolio-person" *portfolio*))
+            (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
+            (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
+            (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
+       (setf *portfolio* (make-portfolio person projects updated sections talks))))
+    (:sections
+     (let* ((existing (ct-access *ct-core* "portfolio-sections" *portfolio*))
+            (updated (ask-entity-list "SECTION" #'ask-section existing))
+            (person (ct-access *ct-core* "portfolio-person" *portfolio*))
+            (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
+            (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
+            (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
+       (setf *portfolio* (make-portfolio person projects skills updated talks))))
+    (:talks
+     (let* ((existing (ct-access *ct-core* "portfolio-talks" *portfolio*))
+            (updated (ask-entity-list "TALK" #'ask-talk existing))
+            (person (ct-access *ct-core* "portfolio-person" *portfolio*))
+            (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
+            (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
+            (sections (ct-access *ct-core* "portfolio-sections" *portfolio*)))
+       (setf *portfolio* (make-portfolio person projects skills sections updated talks))))))
+
+;;; ============================================================
+;;; Mode 3: SHIP — validate + export (the finish line)
+;;; ============================================================
+
+(defun ship (&key (target (content-target)) (dry-run t))
+  "Validate the portfolio and export to markdown.
+   TARGET: output directory (default: ./output/).
+   DRY-RUN: if T (default), validate only, don't write files."
+  (unless *portfolio*
+    (format *query-io* "~&  No *portfolio* exists. Run (scaffold) first.~%")
+    (return-from ship nil))
+  (format *query-io* "~&~%╔══════════════════════════════════════╗")
+  (format *query-io* "~&║        SHIP — validate & export       ║")
+  (format *query-io* "~&╚══════════════════════════════════════╝~%")
+  (let* ((errors (funcall (ct-fn *ct-valid* "validate-portfolio") *portfolio*))
+         (valid-p (eq errors coalton:Nil)))
+    (if valid-p
+        (progn
+          (format *query-io* "~&  ✓ Portfolio is valid.~%")
+          (show-status)
+          (if dry-run
+              (format *query-io* "~&  Dry run — no files written.~%")
+              (progn
+                (export-all :target target)
+                (format *query-io* "~&  ✓ Shipped to ~A~%" target))))
+        (progn
+          (format *query-io* "~&  ✗ ~D validation errors — must fix before shipping:~%"
+                  (ct-list-length errors))
+          (loop while (not (eq errors coalton:Nil))
+                do (format *query-io* "    - ~A~%" (cl:car errors))
+                   (setf errors (cl:cdr errors)))
+          (format *query-io* "~&  Run (refine) to fix issues.~%"))))
+  t)
+
+;;; ============================================================
+;;; Shared helpers
+;;; ============================================================
+
+(defun show-status ()
+  "Print a summary of the current portfolio."
+  (let ((person (ct-access *ct-core* "portfolio-person" *portfolio*))
+        (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
+        (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
+        (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
+        (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
+    (format *query-io* "~&  ┌────────────────────────────────────┐")
+    (format *query-io* "~&  │ Name: ~27A │"
+            (handler-case (ct-get person "person-name") (error () "")))
+    (format *query-io* "~&  ├────────────────────────────────────┤")
+    (format *query-io* "~&  │ Projects: ~2D   Skills: ~2D            │"
+            (ct-list-length projects) (ct-list-length skills))
+    (format *query-io* "~&  │ Sections: ~2D   Talks:   ~2D            │"
+            (ct-list-length sections) (ct-list-length talks))
+    (let ((errors (funcall (ct-fn *ct-valid* "validate-portfolio") *portfolio*)))
+      (format *query-io* "~&  ├────────────────────────────────────┤")
+      (if (eq errors coalton:Nil)
+          (format *query-io* "~&  │ Status: VALID                       │")
+          (format *query-io* "~&  │ Status: ~2D ERROR(S)                  │"
+                  (ct-list-length errors))))
+    (format *query-io* "~&  └────────────────────────────────────┘~%")))
+
+(defun show-full-validation ()
+  "Run full portfolio validation and display all results."
+  (let ((errors (funcall (ct-fn *ct-valid* "validate-portfolio") *portfolio*)))
+    (if (eq errors coalton:Nil)
+        (format *query-io* "~&  ✓ Portfolio is fully valid.~%")
+        (progn
+          (format *query-io* "~&  ✗ ~D validation errors:~%"
+                  (ct-list-length errors))
+          (loop while (not (eq errors coalton:Nil))
+                do (format *query-io* "    - ~A~%" (cl:car errors))
+                   (setf errors (cl:cdr errors)))))))
+
+;;; ============================================================
 ;;; Load banner
 ;;; ============================================================
 
 (format t "~&;;; Interrogation functions loaded.~%")
-(format t "~&;;; Try: (portfolio:describe-portfolio)~%")
-(format t "~&;;;   or: (portfolio:ask-person) (portfolio:ask-project) ...~%")
+(format t "~&;;; (scaffold)  — create fresh content~%")
+(format t "~&;;; (refine)    — maintain & polish~%")
+(format t "~&;;; (ship)      — validate & export~%")
