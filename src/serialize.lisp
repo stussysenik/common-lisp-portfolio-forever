@@ -539,8 +539,114 @@
     (format stream "~&#| ====== END ======~%")))
 
 ;;; ============================================================
-;;; Load banner
+;;; Persistence: save / load the portfolio between REPL sessions
 ;;; ============================================================
 
-(format t "~&;;; Serialization functions loaded.~%")
-(format t "~&;;; Try: (portfolio:export-all) (portfolio:preview-all)~%")
+(defun save (&optional (path (merge-pathnames "portfolio.lisp"
+                                              (or *load-truename*
+                                                  *default-pathname-defaults*))))
+  "Save *portfolio* as a loadable Lisp file. Restore with (restore).
+   Default: ./portfolio.lisp"
+  (unless *portfolio*
+    (format t "~&  No *portfolio* to save.~%")
+    (return-from save nil))
+  (with-open-file (out path :direction :output :if-exists :supersede)
+    (write-portfolio-sexp out))
+  (format t "~&  ✓ Saved to ~A~%" path)
+  path)
+
+(defun write-portfolio-sexp (out)
+  "Emit the portfolio as a setf form that can be loaded back."
+  (format out ";;;; portfolio.lisp — saved state, load with (portfolio:load)~%~%")
+  (format out "(in-package :portfolio)~%~%")
+  ;; person
+  (let ((p (ct-get *portfolio* "portfolio-person"))
+        (projects (ct-list-to-cl (ct-get *portfolio* "portfolio-projects")))
+        (skills (ct-list-to-cl (ct-get *portfolio* "portfolio-skills")))
+        (talks (ct-list-to-cl (ct-get *portfolio* "portfolio-talks")))
+        (sections (ct-list-to-cl (ct-get *portfolio* "portfolio-sections"))))
+    (format out "(setf *portfolio* (make-portfolio~%")
+    ;; person form
+    (emit-person-sexp p out)
+    ;; projects
+    (format out "~%   (clist* (list")
+    (dolist (proj projects) (emit-project-sexp proj out))
+    (format out "))~%")
+    ;; skills
+    (format out "   (clist* (list")
+    (dolist (sk skills) (emit-skill-sexp sk out))
+    (format out "))~%")
+    ;; sections
+    (format out "   (clist* (list")
+    (dolist (sec sections) (emit-section-sexp sec out))
+    (format out "))~%")
+    ;; talks
+    (format out "   (clist* (list")
+    (dolist (t* talks) (emit-talk-sexp t* out))
+    (format out "))))~%")))
+
+(defun emit-person-sexp (p out)
+  (let ((long (ct-optional-value p "person-long-bio"))
+        (tls (ct-list-to-cl (ct-get p "person-taglines"))))
+    (format out "   (make-person ~S ~S~%                ~A~%                ~S ~S ~S~%                (clist* (list"
+            (ct-get p "person-name") (ct-get p "person-short-bio")
+            (if long (format nil "(coalton:Some ~S)" long) "coalton:None")
+            (ct-get p "person-location") (ct-get p "person-available") (ct-get p "person-email"))
+    (dolist (tl tls)
+      (format out "~%                  (make-tagline ~S ~S)"
+              (ct-get tl "tagline-lang") (ct-get tl "tagline-text")))
+    (format out ")))")))
+
+(defun emit-project-sexp (proj out)
+  (let ((tags (ct-list-to-cl (ct-get proj "project-tags")))
+        (links (ct-list-to-cl (ct-get proj "project-links")))
+        (color (ct-optional-value proj "project-featured-color")))
+    (format out "~%     (make-project ~S ~S ~S"
+            (ct-get proj "project-slug") (ct-get proj "project-title") (ct-get proj "project-summary"))
+    (format out "~%                    (coalton:make-list")
+    (dolist (tag tags) (format out " (make-tag ~S)" (ct-get tag "tag-text")))
+    (format out ")")
+    (format out "~%                    (coalton:make-list")
+    (dolist (link links) (format out " (make-link ~S ~S)" (ct-get link "link-label") (ct-get link "link-url")))
+    (format out ")")
+    (format out "~%                    ~S ~S ~S"
+            (ct-get proj "project-category") (ct-get proj "project-year") (ct-get proj "project-month"))
+    (format out "~%                    ~A ~A)"
+            (if color (format nil "(coalton:Some ~S)" color) "coalton:None")
+            (ct-get proj "project-wip"))))
+
+(defun emit-skill-sexp (sk out)
+  (let ((tags (ct-list-to-cl (ct-get sk "skill-tags"))))
+    (format out "~%     (make-skill ~S ~S"
+            (ct-get sk "skill-name") (ct-get sk "skill-category"))
+    (format out "~%                 (coalton:make-list")
+    (dolist (tag tags) (format out " (make-tag ~S)" (ct-get tag "tag-text")))
+    (format out "))")))
+
+(defun emit-talk-sexp (t* out)
+  (let ((link (ct-optional-value t* "talk-link")))
+    (format out "~%     (make-talk ~S ~S ~S ~S ~A)"
+            (ct-get t* "talk-title") (ct-get t* "talk-type")
+            (ct-get t* "talk-date") (ct-get t* "talk-description")
+            (if link (format nil "(coalton:Some ~S)" link) "coalton:None"))))
+
+(defun emit-section-sexp (sec out)
+  (let ((keywords (ct-list-to-cl (ct-get sec "section-keywords"))))
+    (format out "~%     (make-section ~S~%                   (clist* ()) ; body TBD~%                   (clist* (list"
+            (ct-get sec "section-heading"))
+    (dolist (kw keywords) (format out " (make-tag ~S)" (ct-get kw "tag-text")))
+    (format out ")))")))
+
+(defun restore (&optional (path (merge-pathnames "portfolio.lisp"
+                                                  (or *load-truename*
+                                                      *default-pathname-defaults*))))
+  "Restore *portfolio* from a saved file."
+  (unless (probe-file path)
+    (format t "~&  ✗ File not found: ~A~%" path)
+    (return-from restore nil))
+  (format t "~&  Loading ~A ..." path)
+  (cl:load path)
+  (if *portfolio*
+      (progn (format t " done.~%") (show-status))
+      (format t " failed.~%"))
+  *portfolio*)
