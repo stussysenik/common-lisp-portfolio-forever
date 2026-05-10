@@ -579,47 +579,391 @@
      (remove-if (lambda (c) (and (char/= c #\-) (not (alphanumericp c)))) result))))
 
 ;;; ============================================================
-;;; Quick entry points
+;;; Entity access helpers
 ;;; ============================================================
 
-(defun add-project ()
-  "Quickly add a single project to *portfolio*."
-  (unless *portfolio*
-    (error "No *portfolio* exists. Run (portfolio:describe-portfolio) first."))
-  (let* ((proj (ask-project))
-         (existing (ct-access *ct-core* "portfolio-projects" *portfolio*))
-         (person (ct-access *ct-core* "portfolio-person" *portfolio*))
-         (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
-         (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
-         (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
-    (setf *portfolio* (make-portfolio person
-                                       (coalton:Cons proj existing)
-                                       skills sections talks))
-    (format *query-io* "~&  ✓ Project added to *portfolio*.~%")))
+(defun portfolio-person ()
+  (ct-access *ct-core* "portfolio-person" *portfolio*))
+(defun portfolio-projects ()
+  (ct-access *ct-core* "portfolio-projects" *portfolio*))
+(defun portfolio-skills ()
+  (ct-access *ct-core* "portfolio-skills" *portfolio*))
+(defun portfolio-sections ()
+  (ct-access *ct-core* "portfolio-sections" *portfolio*))
+(defun portfolio-talks ()
+  (ct-access *ct-core* "portfolio-talks" *portfolio*))
 
-(defun add-skill ()
-  "Quickly add a single skill to *portfolio*."
-  (unless *portfolio*
-    (error "No *portfolio* exists. Run (portfolio:describe-portfolio) first."))
-  (let* ((skill (ask-skill))
-         (existing (ct-access *ct-core* "portfolio-skills" *portfolio*))
-         (person (ct-access *ct-core* "portfolio-person" *portfolio*))
-         (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
-         (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
-         (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
-    (setf *portfolio* (make-portfolio person projects
-                                       (coalton:Cons skill existing)
-                                       sections talks))
-    (format *query-io* "~&  ✓ Skill added to *portfolio*.~%")))
+(defun rebuild-portfolio (person projects skills sections talks)
+  (setf *portfolio* (make-portfolio person projects skills sections talks)))
+
+(defun find-project (slug)
+  (loop for p in (ct-list-to-cl (portfolio-projects))
+        when (string= (ct-get p "project-slug") slug)
+        return p))
+
+(defun find-skill (name)
+  (loop for s in (ct-list-to-cl (portfolio-skills))
+        when (string= (ct-get s "skill-name") name)
+        return s))
+
+(defun find-talk (title)
+  (loop for t* in (ct-list-to-cl (portfolio-talks))
+        when (string= (ct-get t* "talk-title") title)
+        return t*))
+
+(defun find-section (heading)
+  (loop for s in (ct-list-to-cl (portfolio-sections))
+        when (string= (ct-get s "section-heading") heading)
+        return s))
 
 ;;; ============================================================
-;;; Mode 1: SCAFFOLD — capture initial content (rarely used)
+;;; Pad / truncate helpers for aligned tables
+;;; ============================================================
+
+(defun pad (str width &optional (ellipsis t))
+  (let* ((s (or str ""))
+         (len (length s)))
+    (cond
+      ((= len width) s)
+      ((> len width) (if ellipsis
+                         (concatenate 'string (subseq s 0 (- width 3)) "...")
+                         (subseq s 0 width)))
+      (t (concatenate 'string s (make-string (- width len) :initial-element #\Space))))))
+
+(defun fmt-row (fstr &rest args)
+  (apply #'format *query-io* fstr args))
+
+;;; ============================================================
+;;; Mode: LS — table views of all content
+;;; ============================================================
+
+(defun ls (&optional category)
+  "Table view of portfolio content.
+   CATEGORY: :projects, :skills, :talks, :sections, or NIL for summary."
+  (unless *portfolio*
+    (format *query-io* "~&  No *portfolio* exists.~%")
+    (return-from ls nil))
+  (ecase (or category :all)
+    (:all      (ls-all))
+    (:projects (ls-projects))
+    (:skills   (ls-skills))
+    (:talks    (ls-talks))
+    (:sections (ls-sections))))
+
+(defun ls-all ()
+  (show-status)
+  (terpri)
+  (ls-projects)
+  (terpri)
+  (ls-skills)
+  (terpri)
+  (ls-talks))
+
+(defun ls-projects ()
+  (let ((projects (ct-list-to-cl (portfolio-projects))))
+    (fmt-row "~&┌────┬──────────────────────┬──────────────────────────────────────┬────┬──────┬────────────────────┐~%")
+    (fmt-row "~&│  # │ SLUG                  │ TITLE                                │ YR │ WIP  │ CATEGORY           │~%")
+    (fmt-row "~&├────┼──────────────────────┼──────────────────────────────────────┼────┼──────┼────────────────────┤~%")
+    (loop for i from 1
+          for p in projects
+          do (fmt-row "~&│ ~2D │ ~A │ ~A │ ~2D │ ~A │ ~A │~%"
+                       i
+                       (pad (ct-get p "project-slug") 20)
+                       (pad (ct-get p "project-title") 36)
+                       (ct-get p "project-year")
+                       (pad (if (eq (ct-get p "project-wip") coalton:True) "✓" " ") 4)
+                       (pad (ct-get p "project-category") 18)))
+    (fmt-row "~&└────┴──────────────────────┴──────────────────────────────────────┴────┴──────┴────────────────────┘~%")
+    (fmt-row "~&  ~D projects. Select by slug: (edit :project \"slug\") or by #:~%" (length projects))))
+
+(defun ls-skills ()
+  (let ((skills (ct-list-to-cl (portfolio-skills))))
+    (fmt-row "~&┌────┬──────────────────────┬────────────────────────────┐~%")
+    (fmt-row "~&│  # │ NAME                 │ CATEGORY                   │~%")
+    (fmt-row "~&├────┼──────────────────────┼────────────────────────────┤~%")
+    (loop for i from 1
+          for s in skills
+          do (fmt-row "~&│ ~2D │ ~A │ ~A │~%"
+                       i
+                       (pad (ct-get s "skill-name") 20)
+                       (pad (ct-get s "skill-category") 26)))
+    (fmt-row "~&└────┴──────────────────────┴────────────────────────────┘~%")
+    (fmt-row "~&  ~D skills. Select by name: (edit :skill \"Name\")~%" (length skills))))
+
+(defun ls-talks ()
+  (let ((talks (ct-list-to-cl (portfolio-talks))))
+    (fmt-row "~&┌────┬────────────────────────────────────────────┬───────────┬──────────┬─────────┐~%")
+    (fmt-row "~&│  # │ TITLE                                      │ TYPE      │ DATE     │ LINK    │~%")
+    (fmt-row "~&├────┼────────────────────────────────────────────┼───────────┼──────────┼─────────┤~%")
+    (loop for i from 1
+          for t* in talks
+          do (fmt-row "~&│ ~2D │ ~A │ ~A │ ~A │ ~A │~%"
+                       i
+                       (pad (ct-get t* "talk-title") 42)
+                       (pad (ct-get t* "talk-type") 9)
+                       (pad (ct-get t* "talk-date") 8)
+                       (pad (ct-optional-value t* "talk-link") 7)))
+    (fmt-row "~&└────┴────────────────────────────────────────────┴───────────┴──────────┴─────────┘~%")
+    (fmt-row "~&  ~D talks. Select by title: (edit :talk \"Title\")~%" (length talks))))
+
+(defun ls-sections ()
+  (let ((sections (ct-list-to-cl (portfolio-sections))))
+    (if (null sections)
+        (fmt-row "~&  (no sections)~%")
+        (progn
+          (fmt-row "~&┌────┬──────────────────────────────┬──────────┐~%")
+          (fmt-row "~&│  # │ HEADING                      │ KEYWORDS │~%")
+          (fmt-row "~&├────┼──────────────────────────────┼──────────┤~%")
+          (loop for i from 1
+                for s in sections
+                do (fmt-row "~&│ ~2D │ ~A │ ~3D │~%"
+                             i
+                             (pad (ct-get s "section-heading") 28)
+                             (ct-list-length (ct-get s "section-keywords"))))
+          (fmt-row "~&└────┴──────────────────────────────┴──────────┘~%"))))
+  (fmt-row "~&  Select by heading: (edit :section \"Heading\")~%"))
+
+;;; ============================================================
+;;; Mode: EDIT — edit a single entity by slug/name
+;;; ============================================================
+
+(defun edit (category key)
+  "Edit a specific entity identified by CATEGORY and KEY.
+   CATEGORY: :project (key=slug), :skill (key=name), :talk (key=title),
+             :section (key=heading), :person (key ignored).
+   Examples: (edit :project \"breakdex\")  (edit :skill \"Motion Design\")"
+  (unless *portfolio*
+    (format *query-io* "~&  No *portfolio* exists.~%")
+    (return-from edit nil))
+  (ecase category
+    (:person  (edit-person))
+    (:project (edit-project-by-slug key))
+    (:skill   (edit-skill-by-name key))
+    (:talk    (edit-talk-by-title key))
+    (:section (edit-section-by-heading key))))
+
+(defun edit-person ()
+  (let ((existing (portfolio-person)))
+    (rebuild-portfolio (ask-person existing)
+                       (portfolio-projects)
+                       (portfolio-skills)
+                       (portfolio-sections)
+                       (portfolio-talks))
+    (fmt-row "~&  ✓ Person updated.~%")))
+
+(defun edit-project-by-slug (slug)
+  (let* ((existing (find-project slug)))
+    (unless existing
+      (format *query-io* "~&  ✗ No project with slug \"~A\"~%" slug)
+      (return-from edit-project-by-slug nil))
+    (let ((updated (ask-project existing)))
+      (rebuild-portfolio (portfolio-person)
+                         (replace-in-list (portfolio-projects)
+                                          (lambda (p) (string= (ct-get p "project-slug") slug))
+                                          updated)
+                         (portfolio-skills)
+                         (portfolio-sections)
+                         (portfolio-talks))
+      (fmt-row "~&  ✓ Project \"~A\" updated.~%" slug))))
+
+(defun edit-skill-by-name (name)
+  (let* ((existing (find-skill name)))
+    (unless existing
+      (format *query-io* "~&  ✗ No skill named \"~A\"~%" name)
+      (return-from edit-skill-by-name nil))
+    (let ((updated (ask-skill existing)))
+      (rebuild-portfolio (portfolio-person)
+                         (portfolio-projects)
+                         (replace-in-list (portfolio-skills)
+                                          (lambda (s) (string= (ct-get s "skill-name") name))
+                                          updated)
+                         (portfolio-sections)
+                         (portfolio-talks))
+      (fmt-row "~&  ✓ Skill \"~A\" updated.~%" name))))
+
+(defun edit-talk-by-title (title)
+  (let* ((existing (find-talk title)))
+    (unless existing
+      (format *query-io* "~&  ✗ No talk titled \"~A\"~%" title)
+      (return-from edit-talk-by-title nil))
+    (let ((updated (ask-talk existing)))
+      (rebuild-portfolio (portfolio-person)
+                         (portfolio-projects)
+                         (portfolio-skills)
+                         (portfolio-sections)
+                         (replace-in-list (portfolio-talks)
+                                          (lambda (t*) (string= (ct-get t* "talk-title") title))
+                                          updated))
+      (fmt-row "~&  ✓ Talk \"~A\" updated.~%" title))))
+
+(defun edit-section-by-heading (heading)
+  (let* ((existing (find-section heading)))
+    (unless existing
+      (format *query-io* "~&  ✗ No section \"~A\"~%" heading)
+      (return-from edit-section-by-heading nil))
+    (let ((updated (ask-section existing)))
+      (rebuild-portfolio (portfolio-person)
+                         (portfolio-projects)
+                         (portfolio-skills)
+                         (replace-in-list (portfolio-sections)
+                                          (lambda (s) (string= (ct-get s "section-heading") heading))
+                                          updated)
+                         (portfolio-talks))
+      (fmt-row "~&  ✓ Section \"~A\" updated.~%" heading))))
+
+;;; ============================================================
+;;; Mode: NEW — create a new entity from scratch
+;;; ============================================================
+
+(defun new (category)
+  "Create a new entity and append it to the portfolio.
+   CATEGORY: :project, :skill, :talk, :section.
+   Example: (new :project)"
+  (unless *portfolio*
+    (format *query-io* "~&  No *portfolio* exists.~%")
+    (return-from new nil))
+  (ecase category
+    (:project (new-project))
+    (:skill   (new-skill))
+    (:talk    (new-talk))
+    (:section (new-section))))
+
+(defun new-project ()
+  (let ((p (ask-project)))
+    (when p
+      (rebuild-portfolio (portfolio-person)
+                         (coalton:Cons p (portfolio-projects))
+                         (portfolio-skills)
+                         (portfolio-sections)
+                         (portfolio-talks))
+      (fmt-row "~&  ✓ Project \"~A\" added.~%" (ct-get p "project-slug")))))
+
+(defun new-skill ()
+  (let ((s (ask-skill)))
+    (when s
+      (rebuild-portfolio (portfolio-person)
+                         (portfolio-projects)
+                         (coalton:Cons s (portfolio-skills))
+                         (portfolio-sections)
+                         (portfolio-talks))
+      (fmt-row "~&  ✓ Skill \"~A\" added.~%" (ct-get s "skill-name")))))
+
+(defun new-talk ()
+  (let ((t* (ask-talk)))
+    (when t*
+      (rebuild-portfolio (portfolio-person)
+                         (portfolio-projects)
+                         (portfolio-skills)
+                         (portfolio-sections)
+                         (coalton:Cons t* (portfolio-talks)))
+      (fmt-row "~&  ✓ Talk \"~A\" added.~%" (ct-get t* "talk-title")))))
+
+(defun new-section ()
+  (let ((s (ask-section)))
+    (when s
+      (rebuild-portfolio (portfolio-person)
+                         (portfolio-projects)
+                         (portfolio-skills)
+                         (coalton:Cons s (portfolio-sections))
+                         (portfolio-talks))
+      (fmt-row "~&  ✓ Section \"~A\" added.~%" (ct-get s "section-heading")))))
+
+;;; ============================================================
+;;; Mode: RM — remove an entity by slug/name
+;;; ============================================================
+
+(defun rm (category key)
+  "Remove an entity identified by CATEGORY and KEY.
+   Examples: (rm :project \"breakdex\")  (rm :skill \"Sound Design\")"
+  (unless *portfolio*
+    (format *query-io* "~&  No *portfolio* exists.~%")
+    (return-from rm nil))
+  (ecase category
+    (:project (rm-project key))
+    (:skill   (rm-skill key))
+    (:talk    (rm-talk key))
+    (:section (rm-section key))))
+
+(defun rm-project (slug)
+  (let ((existing (find-project slug)))
+    (unless existing
+      (format *query-io* "~&  ✗ No project \"~A\"~%" slug)
+      (return-from rm-project nil))
+    (rebuild-portfolio (portfolio-person)
+                       (remove-from-list (portfolio-projects)
+                                         (lambda (p) (string= (ct-get p "project-slug") slug)))
+                       (portfolio-skills)
+                       (portfolio-sections)
+                       (portfolio-talks))
+    (fmt-row "~&  ✓ Project \"~A\" removed.~%" slug)))
+
+(defun rm-skill (name)
+  (let ((existing (find-skill name)))
+    (unless existing
+      (format *query-io* "~&  ✗ No skill \"~A\"~%" name)
+      (return-from rm-skill nil))
+    (rebuild-portfolio (portfolio-person)
+                       (portfolio-projects)
+                       (remove-from-list (portfolio-skills)
+                                         (lambda (s) (string= (ct-get s "skill-name") name)))
+                       (portfolio-sections)
+                       (portfolio-talks))
+    (fmt-row "~&  ✓ Skill \"~A\" removed.~%" name)))
+
+(defun rm-talk (title)
+  (let ((existing (find-talk title)))
+    (unless existing
+      (format *query-io* "~&  ✗ No talk \"~A\"~%" title)
+      (return-from rm-talk nil))
+    (rebuild-portfolio (portfolio-person)
+                       (portfolio-projects)
+                       (portfolio-skills)
+                       (portfolio-sections)
+                       (remove-from-list (portfolio-talks)
+                                         (lambda (t*) (string= (ct-get t* "talk-title") title))))
+    (fmt-row "~&  ✓ Talk \"~A\" removed.~%" title)))
+
+(defun rm-section (heading)
+  (let ((existing (find-section heading)))
+    (unless existing
+      (format *query-io* "~&  ✗ No section \"~A\"~%" heading)
+      (return-from rm-section nil))
+    (rebuild-portfolio (portfolio-person)
+                       (portfolio-projects)
+                       (portfolio-skills)
+                       (remove-from-list (portfolio-sections)
+                                         (lambda (s) (string= (ct-get s "section-heading") heading)))
+                       (portfolio-talks))
+    (fmt-row "~&  ✓ Section \"~A\" removed.~%" heading)))
+
+;;; ============================================================
+;;; Coalton list: replace / remove element
+;;; ============================================================
+
+(defun replace-in-list (ct-list pred new-item)
+  "Replace first element matching PRED with NEW-ITEM in a Coalton List."
+  (if (eq ct-list coalton:Nil)
+      coalton:Nil
+      (if (funcall pred (cl:car ct-list))
+          (coalton:Cons new-item (cl:cdr ct-list))
+          (coalton:Cons (cl:car ct-list) (replace-in-list (cl:cdr ct-list) pred new-item)))))
+
+(defun remove-from-list (ct-list pred)
+  "Remove all elements matching PRED from a Coalton List."
+  (if (eq ct-list coalton:Nil)
+      coalton:Nil
+      (if (funcall pred (cl:car ct-list))
+          (remove-from-list (cl:cdr ct-list) pred)
+          (coalton:Cons (cl:car ct-list) (remove-from-list (cl:cdr ct-list) pred)))))
+
+;;; ============================================================
+;;; Mode: SCAFFOLD — capture initial content
 ;;; ============================================================
 
 (defun scaffold (&optional target)
   "Create fresh portfolio content from scratch.
    Without arg: full portfolio builder (resets *portfolio*).
-   With keyword arg: scaffold a single entity type.
+   With keyword: scaffold a single entity type.
    TARGET: :portfolio (default), :person, :project, :skill, :section, :talk."
   (let ((target (or target :portfolio)))
     (ecase target
@@ -629,122 +973,112 @@
        (describe-portfolio))
       (:person
        (let ((p (ask-person)))
-         (format *query-io* "~&~%  Person built. Store it in a portfolio with (describe-portfolio).~%")
+         (format *query-io* "~&~%  Person built. Use in portfolio or with (bootstrap).~%")
          p))
-      (:project
-       (let ((p (ask-project)))
-         (format *query-io* "~&~%  Project built. Add to *portfolio* with (refine).~%")
-         p))
-      (:skill
-       (let ((p (ask-skill)))
-         (format *query-io* "~&~%  Skill built. Add to *portfolio* with (refine).~%")
-         p))
-      (:section
-       (let ((p (ask-section)))
-         (format *query-io* "~&~%  Section built. Add to *portfolio* with (refine).~%")
-         p))
-      (:talk
-       (let ((p (ask-talk)))
-         (format *query-io* "~&~%  Talk built. Add to *portfolio* with (refine).~%")
-         p)))))
+      (:project (let ((p (ask-project))) (format *query-io* "~&~%  Use (new :project) to add to portfolio.~%") p))
+      (:skill   (let ((p (ask-skill))) (format *query-io* "~&~%  Use (new :skill) to add to portfolio.~%") p))
+      (:section (let ((p (ask-section))) (format *query-io* "~&~%  Use (new :section) to add to portfolio.~%") p))
+      (:talk    (let ((p (ask-talk))) (format *query-io* "~&~%  Use (new :talk) to add to portfolio.~%") p)))))
 
 ;;; ============================================================
-;;; Mode 2: REFINE — maintain/mature/polish (daily driver)
+;;; Mode: REFINE — parent drill-down menu
 ;;; ============================================================
 
 (defun refine (&optional entity)
   "Maintain and polish existing portfolio content.
-   Without arg: interactive menu on *portfolio*.
-   With keyword arg: refine a specific entity type in-place.
+   Without arg: parent menu showing all categories.
+   With keyword: jump directly to entity type.
    ENTITY: NIL (menu), :person, :projects, :skills, :sections, :talks."
   (unless *portfolio*
-    (format *query-io* "~&  No *portfolio* exists. Run (scaffold) first.~%")
+    (format *query-io* "~&  No *portfolio* exists. Run (bootstrap) or (scaffold) first.~%")
     (return-from refine nil))
   (if entity
-      (refine-entity entity)
+      (refine-category entity)
       (refine-menu)))
 
 (defun refine-menu ()
-  "Interactive refinement menu for the current portfolio."
   (loop
-    (format *query-io* "~&~%")
-    (format *query-io* "~&╔══════════════════════════════════════╗")
-    (format *query-io* "~&║        REFINE PORTFOLIO               ║")
-    (format *query-io* "~&╠══════════════════════════════════════╣")
-    (format *query-io* "~&║  [p]  Person (profile)               ║")
-    (format *query-io* "~&║  [w]  Works (projects) ~2D             ║"
-            (ct-list-length (ct-access *ct-core* "portfolio-projects" *portfolio*)))
-    (format *query-io* "~&║  [s]  Skills ~2D                       ║"
-            (ct-list-length (ct-access *ct-core* "portfolio-skills" *portfolio*)))
-    (format *query-io* "~&║  [c]  Sections ~2D                     ║"
-            (ct-list-length (ct-access *ct-core* "portfolio-sections" *portfolio*)))
-    (format *query-io* "~&║  [t]  Talks ~2D                        ║"
-            (ct-list-length (ct-access *ct-core* "portfolio-talks" *portfolio*)))
-    (format *query-io* "~&║  [v]  Validate all                    ║")
-    (format *query-io* "~&║  [st] Status / summary                ║")
-    (format *query-io* "~&║  [.]  Done (back)                     ║")
-    (format *query-io* "~&╚══════════════════════════════════════╝")
+    (terpri)
+    (show-status)
+    (terpri)
+    (fmt-row "~&  [p]  Person       [ls] List all tables~%")
+    (fmt-row "~&  [w]  Projects     [n]  New entity~%")
+    (fmt-row "~&  [s]  Skills       [.]  Done~%")
+    (fmt-row "~&  [t]  Talks                      ~%")
+    (fmt-row "~&  [c]  Sections                   ~%")
     (prompt "~&> ")
     (let ((choice (string-downcase (get-line))))
       (cond
-        ((string= choice "p") (refine-entity :person))
-        ((string= choice "w") (refine-entity :projects))
-        ((string= choice "s") (refine-entity :skills))
-        ((string= choice "c") (refine-entity :sections))
-        ((string= choice "t") (refine-entity :talks))
-        ((string= choice "v") (show-full-validation))
-        ((string= choice "st") (show-status))
+        ((string= choice "p") (refine-category :person))
+        ((string= choice "w") (refine-category :projects))
+        ((string= choice "s") (refine-category :skills))
+        ((string= choice "t") (refine-category :talks))
+        ((string= choice "c") (refine-category :sections))
+        ((string= choice "ls") (ls-all))
+        ((string= choice "n") (refine-new))
         ((string= choice ".") (return-from refine-menu))
         ((string= choice "") (return-from refine-menu))
-        (t (format *query-io* "~&  Unknown: ~A~%" choice))))))
+        (t (fmt-row "~&  Unknown: ~A~%" choice))))))
 
-(defun refine-entity (entity)
-  "Refine a specific entity type in the portfolio."
-  (ecase entity
-    (:person
-     (let ((existing (ct-access *ct-core* "portfolio-person" *portfolio*))
-           (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
-           (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
-           (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
-           (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
-       (setf *portfolio* (make-portfolio (ask-person existing)
-                                          projects skills sections talks))
-       (format *query-io* "~&  ✓ Person updated.~%")))
-    (:projects
-     (let* ((existing (ct-access *ct-core* "portfolio-projects" *portfolio*))
-            (updated (ask-entity-list "PROJECT" #'ask-project existing))
-            (person (ct-access *ct-core* "portfolio-person" *portfolio*))
-            (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
-            (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
-            (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
-       (setf *portfolio* (make-portfolio person updated skills sections talks))))
-    (:skills
-     (let* ((existing (ct-access *ct-core* "portfolio-skills" *portfolio*))
-            (updated (ask-entity-list "SKILL" #'ask-skill existing))
-            (person (ct-access *ct-core* "portfolio-person" *portfolio*))
-            (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
-            (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
-            (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
-       (setf *portfolio* (make-portfolio person projects updated sections talks))))
-    (:sections
-     (let* ((existing (ct-access *ct-core* "portfolio-sections" *portfolio*))
-            (updated (ask-entity-list "SECTION" #'ask-section existing))
-            (person (ct-access *ct-core* "portfolio-person" *portfolio*))
-            (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
-            (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
-            (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
-       (setf *portfolio* (make-portfolio person projects skills updated talks))))
-    (:talks
-     (let* ((existing (ct-access *ct-core* "portfolio-talks" *portfolio*))
-            (updated (ask-entity-list "TALK" #'ask-talk existing))
-            (person (ct-access *ct-core* "portfolio-person" *portfolio*))
-            (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
-            (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
-            (sections (ct-access *ct-core* "portfolio-sections" *portfolio*)))
-       (setf *portfolio* (make-portfolio person projects skills sections updated talks))))))
+(defun refine-category (cat)
+  "Show table for a category, then drill-down options."
+  (let ((projects (portfolio-projects))
+        (skills (portfolio-skills))
+        (talks (portfolio-talks)))
+    (ecase cat
+      (:person   (edit-person))
+      (:projects (progn (ls-projects)
+                        (refine-drill :project "slug")))
+      (:skills   (progn (ls-skills)
+                        (refine-drill :skill "name")))
+      (:talks    (progn (ls-talks)
+                        (refine-drill :talk "title")))
+      (:sections (progn (ls-sections)
+                        (refine-drill :section "heading"))))))
+
+(defun refine-drill (cat key-label)
+  "After showing a table, offer edit/new/rm by key."
+  (loop
+    (prompt "~&  [e]dit <~A>  [n]ew  [r]m <~A>  [.] back: " key-label key-label)
+    (let* ((input (get-line))
+           (parts (split-input input)))
+      (cond
+        ((or (string= input ".") (string= input "")) (return))
+        ((string= (car parts) "e")
+         (if (cdr parts)
+             (edit cat (cadr parts))
+             (format *query-io* "~&  Usage: e <~A>~%" key-label)))
+        ((string= (car parts) "n") (new cat))
+        ((string= (car parts) "r")
+         (if (cdr parts)
+             (rm cat (cadr parts))
+             (format *query-io* "~&  Usage: r <~A>~%" key-label)))
+        (t (format *query-io* "~&  Unknown: ~A~%" input))))))
+
+(defun refine-new ()
+  "Prompt which category to create a new entity in."
+  (prompt "~&  New: [w] project  [s] skill  [t] talk  [c] section: ")
+  (let ((choice (string-downcase (get-line))))
+    (cond
+      ((string= choice "w") (new :project))
+      ((string= choice "s") (new :skill))
+      ((string= choice "t") (new :talk))
+      ((string= choice "c") (new :section))
+      (t (format *query-io* "~&  Cancelled.~%")))))
 
 ;;; ============================================================
-;;; Mode 3: SHIP — validate + export (the finish line)
+;;; Utility: split "e breakdex" into ("e" "breakdex")
+;;; ============================================================
+
+(defun split-input (str)
+  (let ((pos (position #\Space str)))
+    (if pos
+        (list (subseq str 0 pos)
+              (string-trim " " (subseq str (1+ pos))))
+        (list str))))
+
+;;; ============================================================
+;;; Mode: SHIP — validate + export
 ;;; ============================================================
 
 (defun ship (&key (target (content-target)) (dry-run t))
@@ -752,7 +1086,7 @@
    TARGET: output directory (default: ./output/).
    DRY-RUN: if T (default), validate only, don't write files."
   (unless *portfolio*
-    (format *query-io* "~&  No *portfolio* exists. Run (scaffold) first.~%")
+    (format *query-io* "~&  No *portfolio* exists. Run (bootstrap) or (scaffold) first.~%")
     (return-from ship nil))
   (format *query-io* "~&~%╔══════════════════════════════════════╗")
   (format *query-io* "~&║        SHIP — validate & export       ║")
@@ -761,20 +1095,20 @@
          (valid-p (eq errors coalton:Nil)))
     (if valid-p
         (progn
-          (format *query-io* "~&  ✓ Portfolio is valid.~%")
+          (fmt-row "~&  ✓ Portfolio is valid.~%")
           (show-status)
           (if dry-run
-              (format *query-io* "~&  Dry run — no files written.~%")
+              (fmt-row "~&  Dry run — no files written.~%")
               (progn
                 (export-all :target target)
-                (format *query-io* "~&  ✓ Shipped to ~A~%" target))))
+                (fmt-row "~&  ✓ Shipped to ~A~%" target))))
         (progn
-          (format *query-io* "~&  ✗ ~D validation errors — must fix before shipping:~%"
+          (fmt-row "~&  ✗ ~D validation errors — must fix before shipping:~%"
                   (ct-list-length errors))
           (loop while (not (eq errors coalton:Nil))
-                do (format *query-io* "    - ~A~%" (cl:car errors))
+                do (fmt-row "    - ~A~%" (cl:car errors))
                    (setf errors (cl:cdr errors)))
-          (format *query-io* "~&  Run (refine) to fix issues.~%"))))
+          (fmt-row "~&  Run (refine) to fix issues, then try again.~%"))))
   t)
 
 ;;; ============================================================
@@ -783,37 +1117,35 @@
 
 (defun show-status ()
   "Print a summary of the current portfolio."
-  (let ((person (ct-access *ct-core* "portfolio-person" *portfolio*))
-        (projects (ct-access *ct-core* "portfolio-projects" *portfolio*))
-        (skills (ct-access *ct-core* "portfolio-skills" *portfolio*))
-        (sections (ct-access *ct-core* "portfolio-sections" *portfolio*))
-        (talks (ct-access *ct-core* "portfolio-talks" *portfolio*)))
-    (format *query-io* "~&  ┌────────────────────────────────────┐")
-    (format *query-io* "~&  │ Name: ~27A │"
+  (let ((person (portfolio-person))
+        (projects (portfolio-projects))
+        (skills (portfolio-skills))
+        (sections (portfolio-sections))
+        (talks (portfolio-talks)))
+    (fmt-row "~&  ┌────────────────────────────────────┐")
+    (fmt-row "~&  │ Name: ~27A │"
             (handler-case (ct-get person "person-name") (error () "")))
-    (format *query-io* "~&  ├────────────────────────────────────┤")
-    (format *query-io* "~&  │ Projects: ~2D   Skills: ~2D            │"
+    (fmt-row "~&  ├────────────────────────────────────┤")
+    (fmt-row "~&  │ Projects: ~2D   Skills: ~2D            │"
             (ct-list-length projects) (ct-list-length skills))
-    (format *query-io* "~&  │ Sections: ~2D   Talks:   ~2D            │"
+    (fmt-row "~&  │ Sections: ~2D   Talks:   ~2D            │"
             (ct-list-length sections) (ct-list-length talks))
     (let ((errors (funcall (ct-fn *ct-valid* "validate-portfolio") *portfolio*)))
-      (format *query-io* "~&  ├────────────────────────────────────┤")
+      (fmt-row "~&  ├────────────────────────────────────┤")
       (if (eq errors coalton:Nil)
-          (format *query-io* "~&  │ Status: VALID                       │")
-          (format *query-io* "~&  │ Status: ~2D ERROR(S)                  │"
+          (fmt-row "~&  │ Status: VALID                       │")
+          (fmt-row "~&  │ Status: ~2D ERROR(S)                  │"
                   (ct-list-length errors))))
-    (format *query-io* "~&  └────────────────────────────────────┘~%")))
+    (fmt-row "~&  └────────────────────────────────────┘~%")))
 
 (defun show-full-validation ()
-  "Run full portfolio validation and display all results."
   (let ((errors (funcall (ct-fn *ct-valid* "validate-portfolio") *portfolio*)))
     (if (eq errors coalton:Nil)
-        (format *query-io* "~&  ✓ Portfolio is fully valid.~%")
+        (fmt-row "~&  ✓ Portfolio is fully valid.~%")
         (progn
-          (format *query-io* "~&  ✗ ~D validation errors:~%"
-                  (ct-list-length errors))
+          (fmt-row "~&  ✗ ~D validation errors:~%" (ct-list-length errors))
           (loop while (not (eq errors coalton:Nil))
-                do (format *query-io* "    - ~A~%" (cl:car errors))
+                do (fmt-row "    - ~A~%" (cl:car errors))
                    (setf errors (cl:cdr errors)))))))
 
 ;;; ============================================================
@@ -821,6 +1153,10 @@
 ;;; ============================================================
 
 (format t "~&;;; Interrogation functions loaded.~%")
-(format t "~&;;; (scaffold)  — create fresh content~%")
-(format t "~&;;; (refine)    — maintain & polish~%")
-(format t "~&;;; (ship)      — validate & export~%")
+(format t "~&;;; (ls)             — table view of all content~%")
+(format t "~&;;; (ls :projects)   — project table with slugs~%")
+(format t "~&;;; (edit :project \"slug\") — surgical edit by slug~%")
+(format t "~&;;; (new :project)   — create & append new entity~%")
+(format t "~&;;; (rm :project \"slug\")  — remove by slug~%")
+(format t "~&;;; (refine)         — parent menu with drill-down~%")
+(format t "~&;;; (ship)           — validate + export~%")

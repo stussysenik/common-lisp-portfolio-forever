@@ -22,6 +22,7 @@
    #:clist #:clist*
    #:export-all #:preview-profile #:preview-project #:preview-all
    #:scaffold #:refine #:ship
+   #:ls #:edit #:new #:rm
    #:bootstrap
    #:seed-person #:seed-projects #:seed-skills #:seed-talks
    #:*content-target*))
