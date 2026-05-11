@@ -1,3 +1,14 @@
+# Partition Resize Recipe
+
+Backups: `gdrive:pop-os-backup-critical/` | ISO: `/data/pop-os-24.04-amd64-nvidia.iso`
+
+1. USB flashed. Reboot → F12 → USB → Try Demo Mode
+2. GParted: Delete sda1 → Move sda5 to start → Move sda6 next → Resize sda6 to max
+3. Terminal: `rclone copy gdrive:pop-os-backup-critical/recovery-after-repartition.sh ./ && sudo bash recovery-after-repartition.sh`
+4. Reboot → Restore: `rclone copy gdrive:pop-os-backup-critical/ ~/restore-tmp/ && tar -xzf ~/restore-tmp/backup-home-critical.tar.gz -C /home/senik/ && tar -xzf ~/restore-tmp/backup-data-critical.tar.gz -C /home/senik/data-restore/`
+
+---
+
 # common-lisp-portfolio-forever
 
 A type-driven portfolio content engine written in Common Lisp + [Coalton](https://github.com/coalton-lang/coalton). All content lives in typed structures; the REPL is the CMS. Exports markdown for [Eleventy](https://www.11ty.dev/).
